@@ -19,6 +19,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.util.DisplayMetrics
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
@@ -74,8 +75,7 @@ class FrameInterpService : Service() {
         addOverlay()
 
         val metrics = resources.displayMetrics
-        val captureWidth = max(480, metrics.widthPixels / 2)
-        val captureHeight = max(720, metrics.heightPixels / 2)
+        val (captureWidth, captureHeight) = resolveCaptureSize(metrics)
 
         imageReader = ImageReader.newInstance(captureWidth, captureHeight, PixelFormat.RGBA_8888, 2).apply {
             setOnImageAvailableListener({ reader ->
@@ -105,6 +105,22 @@ class FrameInterpService : Service() {
         }
     }
 
+    private fun resolveCaptureSize(metrics: DisplayMetrics): Pair<Int, Int> {
+        val screenWidth = max(1, metrics.widthPixels)
+        val screenHeight = max(1, metrics.heightPixels)
+
+        val targetWidth = if (screenWidth > 1600) 1280 else if (screenWidth > 1000) 960 else 720
+        val targetHeight = if (screenHeight > 900) 720 else if (screenHeight > 600) 540 else 480
+
+        val scaleWidth = targetWidth.toFloat() / screenWidth.toFloat()
+        val scaleHeight = targetHeight.toFloat() / screenHeight.toFloat()
+        val scale = minOf(scaleWidth, scaleHeight).coerceIn(0.25f, 1f)
+
+        val captureWidth = max(480, (screenWidth * scale).roundToInt())
+        val captureHeight = max(480, (screenHeight * scale).roundToInt())
+        return captureWidth to captureHeight
+    }
+
     private fun handleCapturedFrame(bitmap: Bitmap) {
         val scaledBitmap = bitmap.scaleForInterpolation()
         bitmap.recycle()
@@ -129,12 +145,25 @@ class FrameInterpService : Service() {
         val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         overlayContainer = FrameLayout(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
+            layoutParams = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT
+            )
         }
         overlayImageView = ImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
             alpha = 0.95f
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
         }
-        statsView = FrameStatsView(this)
+        statsView = FrameStatsView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
 
         overlayContainer?.addView(overlayImageView)
         overlayContainer?.addView(statsView)
